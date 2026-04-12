@@ -1,15 +1,12 @@
-# Use the official Apify Node + Playwright + Chrome image
+# Base image with Playwright and Chrome pre-installed
 FROM apify/actor-node-playwright-chrome:20
 
-# Copy all files into the container
+# Copy all project files
 COPY --chown=myuser . ./
 
-# Install ALL dependencies (including devDependencies needed for build)
+# Install dependencies and build
 RUN npm install --include=dev --audit=false
-
-# Compile TypeScript to JavaScript
 RUN npm run build
 
-# Set the command to run the crawler
-# start_xvfb handles the virtual display for the browser
+# Start the crawler using the virtual display script
 CMD ./start_xvfb_and_run_cmd.sh && npm run start:prod --silent

@@ -1,9 +1,9 @@
-import { PlaywrightCrawler, Dataset } from 'crawlee';
+import { PlaywrightCrawler, Dataset, log } from 'crawlee';
 
 const crawler = new PlaywrightCrawler({
-    // ADDED THIS BLOCK: Pointing Playwright to the container's browser
     launchContext: {
         launchOptions: {
+            // Points to the pre-installed browser in the Apify/Docker container
             executablePath: process.env.APIFY_CHROME_EXECUTABLE_PATH || undefined,
             headless: true,
         },
@@ -18,6 +18,7 @@ const crawler = new PlaywrightCrawler({
             const expectedLabel = request.userData.menuLabel;
             const isMatch = articleTitle?.trim() === expectedLabel?.trim();
 
+            // Push data to the dataset
             await Dataset.pushData({
                 url: request.url,
                 menuLabel: expectedLabel,
@@ -25,10 +26,10 @@ const crawler = new PlaywrightCrawler({
                 isMatch: isMatch,
                 status: isMatch ? 'PASSED' : 'FAILED',
             });
+            
             log.info(`Result: ${isMatch ? 'Match' : 'Mismatch'} for ${expectedLabel}`);
         } else {
             const menuLinks = page.locator('header h2 a, a.blog-post-card'); 
-            
             const count = await menuLinks.count();
             const linksToFollow = [];
 
@@ -51,3 +52,8 @@ const crawler = new PlaywrightCrawler({
 });
 
 await crawler.run(['https://crawlee.dev/blog']);
+
+// FORCE DATASET TO INITIALIZE AND SHOW IN UI
+const dataset = await Dataset.open();
+const info = await dataset.getInfo();
+log.info(`Crawler finished. Total items in dataset: ${info?.itemCount}`);
