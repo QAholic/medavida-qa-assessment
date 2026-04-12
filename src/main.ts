@@ -1,67 +1,63 @@
-import { PlaywrightCrawler, Dataset, log } from 'crawlee';
+import { PlaywrightCrawler, log } from 'crawlee';
 
-async function run() {
-    // 1. Open a named dataset so it's easy to find in the Apify Storage tab
-    const dataset = await Dataset.open('articles-report');
+// AWS Lambda entry point
+export const handler = async (event: any) => {
+    const results: any[] = [];
 
     const crawler = new PlaywrightCrawler({
         launchContext: {
             launchOptions: {
-                // Ensure we use the container's pre-installed browser
-                executablePath: process.env.APIFY_CHROME_EXECUTABLE_PATH || undefined,
+                // Required for running inside AWS Linux containers
+                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
                 headless: true,
             },
         },
-        // Limit concurrency to save memory on the free tier
-        maxConcurrency: 1, 
+        maxConcurrency: 1, // Keeps memory usage low to avoid AWS crashes
         async requestHandler({ page, request, log }) {
-            log.info(`Processing ${request.url}`);
-
             if (request.label === 'DETAIL') {
                 await page.waitForSelector('h1');
                 const articleTitle = await page.locator('h1').textContent();
-                
                 const expectedLabel = request.userData.menuLabel;
                 const isMatch = articleTitle?.trim() === expectedLabel?.trim();
 
-                // 2. Push data directly to our named dataset
-                await dataset.pushData({
+                results.push({
                     url: request.url,
-                    menuLabel: expectedLabel,
-                    articleTitle: articleTitle?.trim(),
-                    isMatch: isMatch,
+                    expected: expectedLabel,
+                    actual: articleTitle?.trim(),
                     status: isMatch ? 'PASSED' : 'FAILED',
                 });
                 
-                log.info(`Result: ${isMatch ? 'Match' : 'Mismatch'} for ${expectedLabel}`);
+                log.info(`Processed: ${expectedLabel} -> ${isMatch ? 'PASSED' : 'FAILED'}`);
             } else {
                 const menuLinks = page.locator('header h2 a, a.blog-post-card'); 
                 const count = await menuLinks.count();
-                const linksToFollow = [];
-
                 for (let i = 0; i < count; i++) {
                     const link = menuLinks.nth(i);
                     const label = await link.textContent();
                     const href = await link.getAttribute('href');
-
                     if (href) {
-                        linksToFollow.push({
+                        await crawler.addRequests([{
                             url: new URL(href, request.url).href,
                             label: 'DETAIL',
                             userData: { menuLabel: label?.trim() },
-                        });
+                        }]);
                     }
                 }
-                await crawler.addRequests(linksToFollow);
             }
         },
     });
 
     await crawler.run(['https://crawlee.dev/blog']);
-
-    // 3. Final log to confirm the count before the actor stops
-    const info = await dataset.getInfo();
-    log.info(`CRAWLER FINISHED. Successfully saved ${info?.itemCount} items to 'articles-report'.`);
-}
-
-run();
+    
+    // This prints a beautiful table in AWS CloudWatch logs
+    console.table(results);
+    
+    return {
+        statusCode: 200,
+        body: JSON.stringify({ 
+            message: "Validation Complete", 
+            total: results.length,
+            data: results 
+        }),
+    };
+};
