@@ -1,18 +1,23 @@
 import { PlaywrightCrawler, Dataset } from 'crawlee';
 
 const crawler = new PlaywrightCrawler({
+    // ADDED THIS BLOCK: Pointing Playwright to the container's browser
+    launchContext: {
+        launchOptions: {
+            executablePath: process.env.APIFY_CHROME_EXECUTABLE_PATH || undefined,
+            headless: true,
+        },
+    },
     async requestHandler({ page, request, log }) {
         log.info(`Processing ${request.url}`);
 
         if (request.label === 'DETAIL') {
-            // Wait for the article title to appear
             await page.waitForSelector('h1');
             const articleTitle = await page.locator('h1').textContent();
             
             const expectedLabel = request.userData.menuLabel;
             const isMatch = articleTitle?.trim() === expectedLabel?.trim();
 
-            // Save the structured report [cite: 9, 34, 48]
             await Dataset.pushData({
                 url: request.url,
                 menuLabel: expectedLabel,
@@ -22,7 +27,6 @@ const crawler = new PlaywrightCrawler({
             });
             log.info(`Result: ${isMatch ? 'Match' : 'Mismatch'} for ${expectedLabel}`);
         } else {
-            // Refined selector for Crawlee blog links
             const menuLinks = page.locator('header h2 a, a.blog-post-card'); 
             
             const count = await menuLinks.count();
@@ -35,7 +39,7 @@ const crawler = new PlaywrightCrawler({
 
                 if (href) {
                     linksToFollow.push({
-                        url: new URL(href, request.loadedUrl).href,
+                        url: new URL(href, request.url).href,
                         label: 'DETAIL',
                         userData: { menuLabel: label?.trim() },
                     });
