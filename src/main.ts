@@ -1,4 +1,4 @@
-import { PlaywrightCrawler, log } from 'crawlee';
+import { PlaywrightCrawler } from 'crawlee';
 
 // AWS Lambda entry point
 export const handler = async (event: any) => {
@@ -7,15 +7,22 @@ export const handler = async (event: any) => {
     const crawler = new PlaywrightCrawler({
         launchContext: {
             launchOptions: {
-                // Required for running inside AWS Linux containers
-                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+                // Critical flags for running Chromium in a container
+                args: [
+                    '--no-sandbox', 
+                    '--disable-setuid-sandbox', 
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--single-process'
+                ],
                 headless: true,
             },
         },
-        maxConcurrency: 1, // Keeps memory usage low to avoid AWS crashes
+        // Low concurrency is safer for Lambda's memory limits
+        maxConcurrency: 1, 
         async requestHandler({ page, request, log }) {
             if (request.label === 'DETAIL') {
-                await page.waitForSelector('h1');
+                await page.waitForSelector('h1', { timeout: 15000 });
                 const articleTitle = await page.locator('h1').textContent();
                 const expectedLabel = request.userData.menuLabel;
                 const isMatch = articleTitle?.trim() === expectedLabel?.trim();
@@ -29,6 +36,7 @@ export const handler = async (event: any) => {
                 
                 log.info(`Processed: ${expectedLabel} -> ${isMatch ? 'PASSED' : 'FAILED'}`);
             } else {
+                // Scrape the main blog page for links
                 const menuLinks = page.locator('header h2 a, a.blog-post-card'); 
                 const count = await menuLinks.count();
                 for (let i = 0; i < count; i++) {
@@ -47,9 +55,10 @@ export const handler = async (event: any) => {
         },
     });
 
+    // Run the crawler
     await crawler.run(['https://crawlee.dev/blog']);
     
-    // This prints a beautiful table in AWS CloudWatch logs
+    // Log results for CloudWatch
     console.table(results);
     
     return {

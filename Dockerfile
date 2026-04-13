@@ -1,19 +1,29 @@
-# Use the official AWS Lambda Node.js image
 FROM public.ecr.aws/lambda/nodejs:20
 
-# Install Playwright dependencies for Amazon Linux
-RUN yum install -y amazon-linux-extras
-RUN yum install -y cups-libs libXcomposite libXcursor libXdamage libXext libXi libXrandr libXscrnSaver libXtst pango at-spi2-atk libXt xorg-x11-server-Xvfb xorg-x11-xauth dbus-glib nss nss-tools
+# 1. SET PERMANENT PATHS
+ENV CRAWLEE_STORAGE_DIR=/tmp/crawlee_storage
+ENV PLAYWRIGHT_BROWSERS_PATH=/var/task/bin/browsers
 
-WORKDIR ${LAMBDA_TASK_ROOT}
+# 2. INSTALL SYSTEM DEPENDENCIES (Added libxkbcommon and others)
+RUN dnf install -y \
+    atk at-spi2-atk cups-libs libdrm libXcomposite libXdamage \
+    libXext libXfixes libXrandr libgbm pango alsa-lib nss mesa-libgbm \
+    libxkbcommon xorg-x11-server-utils mesa-libEGL
 
-# Install app dependencies
-COPY package*.json ./
+WORKDIR /var/task
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# 3. INSTALL PLAYWRIGHT & BROWSER BINARIES
 RUN npm install
+RUN npx playwright install chromium
 
-# Build the app
+# Copy source code
 COPY . .
-RUN npm run build
+
+# Build TypeScript
+RUN npx tsc --noUnusedParameters false
 
 # Set the Lambda handler
 CMD [ "dist/main.handler" ]
